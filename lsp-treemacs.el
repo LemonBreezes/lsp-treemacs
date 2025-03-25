@@ -1038,19 +1038,7 @@ With prefix 2 show both."
   "Refresh the errors list."
   (condition-case err
       (progn
-        ;; Reset the DOM for a clean slate
-        (when-let ((buffer (get-buffer lsp-treemacs-errors-buffer-name)))
-          (with-current-buffer buffer
-            ;; First reset local variables that might reference the DOM
-            (setq-local lsp-treemacs-tree nil)
-            ;; Then fully clear the DOM
-            (setq-local treemacs-dom (make-hash-table :test #'equal))
-            (treemacs--reset-dom)
-            ;; Clear buffer contents
-            (let ((inhibit-read-only t))
-              (erase-buffer))))
-        
-        ;; Gather the error tree data
+        ;; Gather the error tree data first before manipulating the DOM
         (let ((tree-data (if (and lsp-treemacs-error-list-current-project-only
                                lsp-treemacs--current-workspaces)
                           (->> lsp-treemacs--current-workspaces
@@ -1064,8 +1052,13 @@ With prefix 2 show both."
           ;; Ensure tree-data is a valid list
           (unless (listp tree-data)
             (setq tree-data nil))
+            
+          ;; Make a deep copy of the tree data to avoid reference issues
+          (when tree-data
+            (setq tree-data (copy-tree tree-data t)))
           
           ;; Render with either data or empty list
+          ;; The render function will handle DOM reset and buffer clearing
           (lsp-treemacs-render
            tree-data
            "Errors List"
@@ -1088,25 +1081,13 @@ With prefix 2 show both."
   (setq lsp-treemacs--current-workspaces (lsp-workspaces))
   (-if-let (buffer (get-buffer lsp-treemacs-errors-buffer-name))
       (progn
-        ;; If buffer exists, but we're about to re-use it, we need to
-        ;; completely recreate the treemacs DOM to avoid state issues
-        (with-current-buffer buffer
-          (setq-local lsp-treemacs-tree nil)
-          (setq-local treemacs-dom (make-hash-table :test #'equal))
-          (treemacs--reset-dom)
-          ;; Clear buffer contents
-          (let ((inhibit-read-only t))
-            (erase-buffer)))
+        ;; Simply select the window; DOM reset is handled by refresh function
         (select-window (display-buffer-in-side-window buffer lsp-treemacs-errors-position-params))
         (lsp-treemacs-errors-list--refresh))
     (let* ((buffer (get-buffer-create lsp-treemacs-errors-buffer-name))
            (window (display-buffer-in-side-window buffer lsp-treemacs-errors-position-params)))
       (with-current-buffer buffer
-        ;; Initialize the buffer with proper DOM structures
-        (setq-local treemacs-dom (make-hash-table :test #'equal))
-        (treemacs--reset-dom)
-        (setq-local lsp-treemacs-tree nil)
-        ;; Set mode after DOM initialization
+        ;; Initialize the buffer
         (lsp-treemacs-error-list-mode 1)
         (add-hook 'kill-buffer-hook 'lsp-treemacs--kill-buffer nil t))
       (select-window window)

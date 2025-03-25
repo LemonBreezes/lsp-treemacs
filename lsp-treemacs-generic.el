@@ -46,13 +46,19 @@
 (defun lsp-treemacs-generic-refresh (&optional _cache)
   (condition-case err
       (let ((inhibit-read-only t))
-        ;; First reset the DOM completely to avoid corruption
+        ;; First clear any variables that might reference the DOM
+        (setq-local lsp-treemacs-tree (copy-tree lsp-treemacs-tree t))
+        
+        ;; Reset the DOM completely to avoid corruption
         (setq-local treemacs-dom (make-hash-table :test #'equal))
         (treemacs--reset-dom)
+        
         ;; Then update from a clean state
         (save-excursion
           (goto-char (point-min))
-          (treemacs-update-node '(lsp-treemacs-generic-root))))
+          (erase-buffer)
+          (treemacs-initialize lsp-treemacs-generic-root
+            :with-expand-depth 0)))
     (error
      (message "Error refreshing lsp-treemacs: %s" (error-message-string err)))))
 
@@ -143,7 +149,9 @@
 ;; or an empty list as fallback to avoid errors
 (treemacs-define-variadic-entry-node-type lsp-treemacs-generic-root
   :key 'lsp-treemacs-generic-root
-  :children (or (when (and (boundp 'lsp-treemacs-tree) lsp-treemacs-tree) lsp-treemacs-tree) '())
+  :children (or (when (and (boundp 'lsp-treemacs-tree) lsp-treemacs-tree) 
+                   (copy-sequence lsp-treemacs-tree)) 
+                 '())
   :child-type 'lsp-treemacs-generic-node)
 
 (defun lsp-treemacs-render (tree title expand-depth
@@ -155,7 +163,11 @@ RIGHT-CLICK-ACTIONS provides context menu items."
     (with-current-buffer buffer
       ;; Clear any previous state
       (let ((inhibit-read-only t))
-        ;; First fully reset DOM
+        ;; Ensure we have a clean state by clearing buffer-local variables
+        ;; that might hold references to DOM nodes
+        (setq-local lsp-treemacs-tree nil)
+        
+        ;; Fully reset the DOM with a fresh hash table
         (setq-local treemacs-dom (make-hash-table :test #'equal))
         (treemacs--reset-dom)
         
@@ -164,10 +176,14 @@ RIGHT-CLICK-ACTIONS provides context menu items."
           (setq tree nil)
           (message "Warning: Invalid tree data passed to lsp-treemacs-render"))
         
+        ;; Create a deep copy of the tree to avoid reference issues
+        (when tree
+          (setq tree (copy-tree tree t)))
+          
         ;; Set tree data before initialize to ensure it's available
         (setq-local lsp-treemacs-tree tree)
         
-        ;; Clear buffer completely 
+        ;; Clear buffer completely
         (erase-buffer))
       
       ;; Initialize with clean slate
@@ -176,7 +192,6 @@ RIGHT-CLICK-ACTIONS provides context menu items."
         :and-do (progn
                   (lsp-treemacs--set-mode-line-format buffer title)
                   (setq-local face-remapping-alist '((button . default)))
-                  (setq-local lsp-treemacs-tree tree)
                   (setq-local treemacs-default-visit-action 'treemacs-RET-action)
                   (setq-local lsp-treemacs--right-click-actions right-click-actions)
                   (setq-local window-size-fixed nil)
