@@ -1117,6 +1117,9 @@ With prefix 2 show both."
             (with-current-buffer buffer
               (when (and tree-data (not (seq-empty-p tree-data)))
                 (message "LSP-Treemacs: Manually synchronizing DOM after render")
+                ;; First ensure root node is in the DOM
+                (treemacs-on-expand 'lsp-treemacs-generic-root (copy-marker (point-min)))
+                
                 ;; Force DOM synchronization for all top-level nodes
                 (save-excursion
                   (goto-char (point-min))
