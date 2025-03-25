@@ -44,10 +44,14 @@
        ,@body)))
 
 (defun lsp-treemacs-generic-refresh (&optional _cache)
-  (condition-case _err
+  (condition-case err
       (let ((inhibit-read-only t))
-        (treemacs-update-node '(lsp-treemacs-generic-root)))
-    (error)))
+        ;; Ensure we're working with a clean tree state
+        (save-excursion
+          (goto-char (point-min))
+          (treemacs-update-node '(lsp-treemacs-generic-root))))
+    (error 
+     (message "Error refreshing lsp-treemacs: %s" (error-message-string err)))))
 
 (defun lsp-treemacs-generic-update (tree)
   (setq lsp-treemacs-tree tree)

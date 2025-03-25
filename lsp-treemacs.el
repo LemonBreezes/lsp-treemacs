@@ -285,27 +285,27 @@ this hook will be run after having jumped to the target."
                                                       :location (location &as &Location :range (&Range :start start-range))))
                           (when (string= parent-key container-name?)
                             `(:label ,name
-                                     :key ,name
-                                     :icon ,(lsp-treemacs-symbol-kind->icon kind)
-                                     ,@(when (-first (-lambda ((&SymbolInformation :container-name? parent))
-                                                       (string= name parent))
-                                                     rest)
-                                         (list :children (lsp-treemacs--symbols->tree rest name)))
-                                     :kind ,kind
-                                     :location ,start-range
-                                     :ret-action lsp-treemacs-symbols-goto-symbol)))
+                              :key ,name
+                              :icon ,(lsp-treemacs-symbol-kind->icon kind)
+                              ,@(when (-first (-lambda ((&SymbolInformation :container-name? parent))
+                                                (string= name parent))
+                                              rest)
+                                  (list :children (lsp-treemacs--symbols->tree rest name)))
+                              :kind ,kind
+                              :location ,start-range
+                              :ret-action lsp-treemacs-symbols-goto-symbol)))
                         current))
            (seq-map
             (-lambda ((sym &as &DocumentSymbol :name :kind :selection-range
                            (&Range :start start-range) :children?))
               `(:label ,(lsp-render-symbol sym lsp-treemacs-detailed-outline)
-                       :key ,name
-                       :icon ,(lsp-treemacs-symbol-kind->icon kind)
-                       :kind ,kind
-                       :location ,start-range
-                       ,@(unless (seq-empty-p children?)
-                           (list :children (lsp-treemacs--symbols->tree children? name)))
-                       :ret-action lsp-treemacs-symbols-goto-symbol))
+                :key ,name
+                :icon ,(lsp-treemacs-symbol-kind->icon kind)
+                :kind ,kind
+                :location ,start-range
+                ,@(unless (seq-empty-p children?)
+                    (list :children (lsp-treemacs--symbols->tree children? name)))
+                :ret-action lsp-treemacs-symbols-goto-symbol))
             items))))
 
 (defun lsp-treemacs--update-symbols ()
@@ -482,19 +482,19 @@ will be rendered an empty line between them."
 
 (lsp-defun lsp-treemacs-deps--process-dep ((item &as &java:Node :name :uri :path :project-uri))
   `(:label ,name
-           :icon ,(lsp-treemacs-deps--icon item)
-           :key ,(list name uri path)
-           :ret-action ,(lambda (&rest _)
-                          (lsp-treemacs--open-file-in-mru
-                           (or (when uri (lsp--uri-to-path uri))
-                               (when (f-exists? path) path)
-                               (concat (f-parent (lsp--uri-to-path project-uri))
-                                       path))))
-           ,@(unless (lsp-treemacs-deps--java-file? item)
-               (list :children
-                     (lambda (_)
-                       (-map #'lsp-treemacs-deps--process-dep
-                             (lsp-treemacs-deps--get-children item)))))))
+    :icon ,(lsp-treemacs-deps--icon item)
+    :key ,(list name uri path)
+    :ret-action ,(lambda (&rest _)
+                   (lsp-treemacs--open-file-in-mru
+                    (or (when uri (lsp--uri-to-path uri))
+                        (when (f-exists? path) path)
+                        (concat (f-parent (lsp--uri-to-path project-uri))
+                                path))))
+    ,@(unless (lsp-treemacs-deps--java-file? item)
+        (list :children
+              (lambda (_)
+                (-map #'lsp-treemacs-deps--process-dep
+                      (lsp-treemacs-deps--get-children item)))))))
 ;;;###autoload
 (defun lsp-treemacs-java-deps-list ()
   "Display java dependencies."
@@ -855,20 +855,20 @@ With a prefix argument, show the outgoing call hierarchy."
           `(:label ,(concat name (cond
                                   ((eq lsp-treemacs--hierarchy-sub direction) (propertize " ↓" 'face 'shadow))
                                   ((eq lsp-treemacs--hierarchy-super direction) (propertize " ↑" 'face 'shadow))))
-                   :key ,name
-                   :icon ,(lsp-treemacs-symbol-kind->icon kind)
-                   ,@(if loaded?
-                         (list :children (append
-                                          (lsp-treemacs--type-hierarchy-render-nodes children? nil lsp-treemacs--hierarchy-sub)
-                                          (lsp-treemacs--type-hierarchy-render-nodes parents? nil lsp-treemacs--hierarchy-super)))
-                       (list :children-async (-partial #'lsp-treemacs--type-hierarchy-render
-                                                       it
-                                                       direction)))
-                   :ret-action ,(lambda (&rest _)
-                                  (interactive)
-                                  (lsp-treemacs--open-file-in-mru (lsp--uri-to-path uri))
-                                  (goto-char (lsp--position-to-point start))
-                                  (run-hooks 'xref-after-jump-hook))))
+            :key ,name
+            :icon ,(lsp-treemacs-symbol-kind->icon kind)
+            ,@(if loaded?
+                  (list :children (append
+                                   (lsp-treemacs--type-hierarchy-render-nodes children? nil lsp-treemacs--hierarchy-sub)
+                                   (lsp-treemacs--type-hierarchy-render-nodes parents? nil lsp-treemacs--hierarchy-super)))
+                (list :children-async (-partial #'lsp-treemacs--type-hierarchy-render
+                                                it
+                                                direction)))
+            :ret-action ,(lambda (&rest _)
+                           (interactive)
+                           (lsp-treemacs--open-file-in-mru (lsp--uri-to-path uri))
+                           (goto-char (lsp--position-to-point start))
+                           (run-hooks 'xref-after-jump-hook))))
         result))
 
 (lsp-defun lsp-treemacs--type-hierarchy-render ((&TypeHierarchyItem :uri :range (&Range :start)) direction _ callback)
@@ -1035,6 +1035,17 @@ With prefix 2 show both."
 (defvar lsp-treemacs--current-workspaces nil)
 
 (defun lsp-treemacs-errors-list--refresh ()
+  "Refresh the errors list."
+  ;; Reset the DOM for a clean slate
+  (when-let ((buffer (get-buffer lsp-treemacs-errors-buffer-name)))
+    (with-current-buffer buffer
+      ;; First reset local variables that might reference the DOM
+      (setq-local lsp-treemacs-tree nil)
+      ;; Then fully clear the DOM
+      (setq-local treemacs-dom (make-hash-table :test #'equal))
+      ;; Ensure DOM is properly initialized
+      (treemacs--reset-dom)))
+  
   (lsp-treemacs-render
    (if (and lsp-treemacs-error-list-current-project-only
             lsp-treemacs--current-workspaces)
@@ -1052,10 +1063,16 @@ With prefix 2 show both."
 
 ;;;###autoload
 (defun lsp-treemacs-errors-list ()
+  "Display error list."
   (interactive)
   (setq lsp-treemacs--current-workspaces (lsp-workspaces))
   (-if-let (buffer (get-buffer lsp-treemacs-errors-buffer-name))
       (progn
+        ;; If buffer exists, but we're about to re-use it, we need to
+        ;; completely recreate the treemacs DOM to avoid state issues
+        (with-current-buffer buffer
+          (setq-local treemacs-dom nil)
+          (treemacs--reset-dom))
         (select-window (display-buffer-in-side-window buffer lsp-treemacs-errors-position-params))
         (lsp-treemacs-errors-list--refresh))
     (let* ((buffer (lsp-treemacs-errors-list--refresh))
@@ -1063,14 +1080,9 @@ With prefix 2 show both."
       (select-window window)
       (set-window-dedicated-p window t)
       (lsp-treemacs-error-list-mode 1)
-
+      
       (add-hook 'lsp-diagnostics-updated-hook #'lsp-treemacs-errors-list--refresh)
-      (add-hook 'kill-buffer-hook 'lsp-treemacs--kill-buffer nil t)))
-
-  (let ((buf (lsp-treemacs-errors-list--refresh)))
-    (pop-to-buffer buf)
-    (with-current-buffer buf
-      (lsp-treemacs-error-list-mode 1))))
+      (add-hook 'kill-buffer-hook 'lsp-treemacs--kill-buffer nil t))))
 
 (defun lsp-treemacs--diagnostic-icon (severity)
   "Get the icon for DIAGNOSTIC."
