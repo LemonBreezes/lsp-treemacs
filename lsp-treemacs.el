@@ -1068,14 +1068,14 @@ With prefix 2 show both."
       (progn
         ;; Gather the error tree data first before manipulating the DOM
         (let ((tree-data (if (and lsp-treemacs-error-list-current-project-only
-                               lsp-treemacs--current-workspaces)
-                          (->> lsp-treemacs--current-workspaces
-                               (-map #'lsp-workspace-folders)
-                               (-flatten)
-                               (-keep #'lsp-treemacs--build-error-list))
-                        (->> (lsp-session)
-                             (lsp-session-folders)
-                             (-keep #'lsp-treemacs--build-error-list)))))
+                                  lsp-treemacs--current-workspaces)
+                             (->> lsp-treemacs--current-workspaces
+                                  (-map #'lsp-workspace-folders)
+                                  (-flatten)
+                                  (-keep #'lsp-treemacs--build-error-list))
+                           (->> (lsp-session)
+                                (lsp-session-folders)
+                                (-keep #'lsp-treemacs--build-error-list)))))
 
           ;; Ensure tree-data is a valid list and log diagnostic info
           (unless (listp tree-data)
@@ -1089,8 +1089,8 @@ With prefix 2 show both."
                        (maphash (lambda (file diags)
                                   (when diags
                                     (push (format "%s: %d diagnostics"
-                                                 (f-filename file)
-                                                 (length diags))
+                                                  (f-filename file)
+                                                  (length diags))
                                           stats)))
                                 (lsp-diagnostics))
                        (or stats "No diagnostics found"))))
@@ -1141,14 +1141,14 @@ With prefix 2 show both."
                               (when parent-node
                                 (let ((child-node (treemacs-dom-node->create! :key path :position node :parent parent-node)))
                                   (treemacs-dom-node->insert-into-dom! child-node)
-                                  (treemacs-dom-node->add-child! parent-node child-node)))))))))))
+                                  (treemacs-dom-node->add-child! parent-node child-node))))))))))))
 
-          ;; Set header message if empty
-          (when (get-buffer lsp-treemacs-errors-buffer-name)
-            (with-current-buffer lsp-treemacs-errors-buffer-name
-              (setq-local header-line-format (if tree-data
-                                                 nil
-                                               "No errors")))))
+            ;; Set header message if empty
+            (when (get-buffer lsp-treemacs-errors-buffer-name)
+              (with-current-buffer lsp-treemacs-errors-buffer-name
+                (setq-local header-line-format (if tree-data
+                                                   nil
+                                                 "No errors")))))))
     (error
      (message "Error refreshing lsp-treemacs errors list: %s" (error-message-string err)))))
 
