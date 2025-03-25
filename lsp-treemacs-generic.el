@@ -64,7 +64,16 @@
           (goto-char (point-min))
           (erase-buffer)
           (treemacs-initialize lsp-treemacs-generic-root
-            :with-expand-depth 0)))
+            :with-expand-depth 0)
+          
+          ;; Force DOM synchronization for the root node
+          (when (and lsp-treemacs-tree (listp lsp-treemacs-tree) (not (null lsp-treemacs-tree)))
+            (goto-char (point-min))
+            (when-let ((root-btn (or (treemacs-button-get (point) 'button)
+                                     (treemacs-button-get (point-min) 'button))))
+              (let ((key 'lsp-treemacs-generic-root))
+                (treemacs-on-expand key (copy-marker (point-min) t))
+                (message "LSP-Treemacs: Synchronized DOM for root node in refresh"))))))
     (error
      (message "Error refreshing lsp-treemacs: %s" (error-message-string err)))))
 
@@ -209,6 +218,15 @@ RIGHT-CLICK-ACTIONS provides context menu items."
                   (setq-local window-size-fixed nil)
                   (setq-local treemacs--width-is-locked nil)
                   (setq-local treemacs-space-between-root-nodes nil)
+                  
+                  ;; Force DOM synchronization for the root node - this is crucial
+                  ;; to ensure the DOM gets properly populated
+                  (when-let ((root-btn (treemacs-button-get (point-min) 'button)))
+                    (let ((key 'lsp-treemacs-generic-root))
+                      (when tree
+                        (treemacs-on-expand key (copy-marker (point-min) t))
+                        (message "LSP-Treemacs: Synchronized DOM for root node"))))
+                  
                   (when treemacs-text-scale
                     (text-scale-increase treemacs-text-scale))
                   (lsp-treemacs-generic-mode t)))

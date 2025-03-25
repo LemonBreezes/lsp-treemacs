@@ -960,9 +960,9 @@ With prefix 2 show both."
   (let ((diagnostics (lsp-diagnostics))
         (result nil))
     ;; Debug the diagnostic state
-    (message "LSP-Treemacs: Processing folder %s - found %d diagnostic files" 
+    (message "LSP-Treemacs: Processing folder %s - found %d diagnostic files"
              folder (hash-table-count diagnostics))
-    
+
     ;; Build the file list
     (setq result
           (->> diagnostics
@@ -974,10 +974,10 @@ With prefix 2 show both."
                              (not (seq-empty-p (gethash file diagnostics)))
                              (lsp-treemacs-errors--diags? (lsp-diagnostics-stats-for file)))
                     (let ((diag-stats (lsp-diagnostics-stats-for file)))
-                      (message "LSP-Treemacs: File %s has diagnostics: %s" 
-                               (f-filename file) 
+                      (message "LSP-Treemacs: File %s has diagnostics: %s"
+                               (f-filename file)
                                (seq-mapn #'cons '("Error" "Warning" "Info" "Hint") diag-stats))
-                      
+
                       (list :id file
                             :label (format "%s %s %s"
                                          (f-filename file)
@@ -997,13 +997,13 @@ With prefix 2 show both."
                             :ret-action (lambda (&rest _)
                                           (interactive)
                                           (lsp-treemacs--open-file-in-mru file)))))))))
-    
+
     ;; Return with safety check
     (when (and result (not (listp result)))
       (message "LSP-Treemacs: Invalid result from errors--list-files")
       (setq result nil))
-    
-    result)))
+
+    result))
 
 (lsp-treemacs-define-action lsp-treemacs-quick-fix (:file :diag)
   "Select the element under cursor."
@@ -1033,10 +1033,10 @@ With prefix 2 show both."
   (let ((diags (append (lsp-diagnostics-stats-for folder) ())))
     ;; Debug logging
     (when (and diags (not (seq-empty-p diags)))
-      (message "LSP-Treemacs: Found diagnostics for folder %s: %s" 
-               folder 
+      (message "LSP-Treemacs: Found diagnostics for folder %s: %s"
+               folder
                (seq-mapn #'cons '("Error" "Warning" "Info" "Hint") diags)))
-    
+
     (when (lsp-treemacs-errors--diags? diags)
       (list :label (format
                     (propertize "%s %s %s" 'face 'default)
@@ -1066,9 +1066,6 @@ With prefix 2 show both."
   "Refresh the errors list."
   (condition-case err
       (progn
-        ;; Force diagnostics refresh to ensure we have the latest data
-        (lsp-diagnostics-force-refresh)
-        
         ;; Gather the error tree data first before manipulating the DOM
         (let ((tree-data (if (and lsp-treemacs-error-list-current-project-only
                                lsp-treemacs--current-workspaces)
@@ -1079,29 +1076,33 @@ With prefix 2 show both."
                         (->> (lsp-session)
                              (lsp-session-folders)
                              (-keep #'lsp-treemacs--build-error-list)))))
-          
+
           ;; Ensure tree-data is a valid list and log diagnostic info
           (unless (listp tree-data)
             (setq tree-data nil)
             (message "LSP-Treemacs: Error list tree-data is not a valid list"))
-          
+
           ;; Log diagnostic info for troubleshooting
           (when (null tree-data)
             (message "LSP-Treemacs: No diagnostics found for error list. Diagnostic stats: %s"
                      (let ((stats nil))
                        (maphash (lambda (file diags)
                                   (when diags
-                                    (push (format "%s: %d diagnostics" 
-                                                 (f-filename file) 
-                                                 (length diags)) 
+                                    (push (format "%s: %d diagnostics"
+                                                 (f-filename file)
+                                                 (length diags))
                                           stats)))
                                 (lsp-diagnostics))
                        (or stats "No diagnostics found"))))
-            
+
           ;; Make a deep copy of the tree data to avoid reference issues
           (when tree-data
             (setq tree-data (copy-tree tree-data t)))
-          
+
+          ;; Log tree structure for debugging
+          (when tree-data
+            (message "LSP-Treemacs: Tree structure ready with %d top-level items" (length tree-data)))
+
           ;; Render with either data or empty list
           ;; The render function will handle DOM reset and buffer clearing
           (lsp-treemacs-render
@@ -1110,7 +1111,22 @@ With prefix 2 show both."
            lsp-treemacs-error-list-expand-depth
            lsp-treemacs-errors-buffer-name
            `(["Cycle Severity" lsp-treemacs-cycle-severity]))
-          
+
+          ;; Force expansion of root after rendering if needed
+          (when-let ((buffer (get-buffer lsp-treemacs-errors-buffer-name)))
+            (with-current-buffer buffer
+              (when (and tree-data (not (seq-empty-p tree-data)))
+                (message "LSP-Treemacs: Manually synchronizing DOM after render")
+                ;; Force DOM synchronization for all top-level nodes
+                (save-excursion
+                  (goto-char (point-min))
+                  (let ((top-nodes (treemacs-collect-child-nodes (point-min))))
+                    (when top-nodes
+                      (message "LSP-Treemacs: Found %d top-level nodes to expand" (length top-nodes))
+                      (dolist (node top-nodes)
+                        (when-let ((path (treemacs-button-get node :path)))
+                          (treemacs-on-expand path node)))))))))
+
           ;; Set header message if empty
           (when (get-buffer lsp-treemacs-errors-buffer-name)
             (with-current-buffer lsp-treemacs-errors-buffer-name
@@ -1141,18 +1157,18 @@ With prefix 2 show both."
         ;; Initialize buffer with proper mode first
         (lsp-treemacs-error-list-mode 1)
         (add-hook 'kill-buffer-hook 'lsp-treemacs--kill-buffer nil t)
-        
+
         ;; Initialize variables to ensure they're not stale between refreshes
         (setq-local lsp-treemacs-tree nil)
         (setq-local treemacs-dom (make-hash-table :test #'equal))
         (treemacs--reset-dom))
-      
+
       (select-window window)
       (set-window-dedicated-p window t)
-      
+
       ;; Now refresh the content
       (lsp-treemacs-errors-list--refresh)
-      
+
       ;; Add hook for future updates
       (add-hook 'lsp-diagnostics-updated-hook #'lsp-treemacs-errors-list--refresh))))
 
