@@ -1141,14 +1141,14 @@ With prefix 2 show both."
                               (when parent-node
                                 (let ((child-node (treemacs-dom-node->create! :key path :position node :parent parent-node)))
                                   (treemacs-dom-node->insert-into-dom! child-node)
-                                  (treemacs-dom-node->add-child! parent-node child-node))))))))))))
+                                  (treemacs-dom-node->add-child! parent-node child-node)))))))))))
 
           ;; Set header message if empty
           (when (get-buffer lsp-treemacs-errors-buffer-name)
             (with-current-buffer lsp-treemacs-errors-buffer-name
               (setq-local header-line-format (if tree-data
-                                                nil
-                                              "No errors"))))))
+                                                 nil
+                                               "No errors")))))
     (error
      (message "Error refreshing lsp-treemacs errors list: %s" (error-message-string err)))))
 
