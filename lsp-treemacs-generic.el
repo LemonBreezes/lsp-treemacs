@@ -46,11 +46,14 @@
 (defun lsp-treemacs-generic-refresh (&optional _cache)
   (condition-case err
       (let ((inhibit-read-only t))
-        ;; Ensure we're working with a clean tree state
+        ;; First reset the DOM completely to avoid corruption
+        (setq-local treemacs-dom (make-hash-table :test #'equal))
+        (treemacs--reset-dom)
+        ;; Then update from a clean state
         (save-excursion
           (goto-char (point-min))
           (treemacs-update-node '(lsp-treemacs-generic-root))))
-    (error 
+    (error
      (message "Error refreshing lsp-treemacs: %s" (error-message-string err)))))
 
 (defun lsp-treemacs-generic-update (tree)
@@ -138,13 +141,19 @@
 
 (treemacs-define-variadic-entry-node-type lsp-treemacs-generic-root
   :key 'lsp-treemacs-generic-root
-  :children lsp-treemacs-tree
+  :children (lambda () 
+              (or lsp-treemacs-tree nil))
   :child-type 'lsp-treemacs-generic-node)
 
 (defun lsp-treemacs-render (tree title expand-depth
                                  &optional buffer-name right-click-actions _clear-cache?)
   (let ((buffer (get-buffer-create (or buffer-name "*LSP Lookup*"))))
     (with-current-buffer buffer
+      ;; Clear any previous state
+      (when (local-variable-p 'treemacs-dom buffer)
+        (setq-local treemacs-dom (make-hash-table :test #'equal))
+        (treemacs--reset-dom))
+      
       (treemacs-initialize lsp-treemacs-generic-root
         :with-expand-depth (or expand-depth 0)
         :and-do (progn
