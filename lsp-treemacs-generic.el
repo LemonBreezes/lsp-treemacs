@@ -171,7 +171,8 @@
               (or (when (and (boundp 'lsp-treemacs-tree) 
                              lsp-treemacs-tree
                              (listp lsp-treemacs-tree)) 
-                    (copy-sequence lsp-treemacs-tree)) 
+                    ;; Make a deep copy to ensure we don't have reference issues
+                    (copy-tree lsp-treemacs-tree t)) 
                   '()))
   :child-type 'lsp-treemacs-generic-node)
 
@@ -221,11 +222,10 @@ RIGHT-CLICK-ACTIONS provides context menu items."
                   
                   ;; Force DOM synchronization for the root node - this is crucial
                   ;; to ensure the DOM gets properly populated
-                  (when-let ((root-btn (treemacs-button-get (point-min) 'button)))
+                  (when tree
                     (let ((key 'lsp-treemacs-generic-root))
-                      (when tree
-                        (treemacs-on-expand key (copy-marker (point-min) t))
-                        (message "LSP-Treemacs: Synchronized DOM for root node"))))
+                      (treemacs-on-expand key (copy-marker (point-min) t))
+                      (message "LSP-Treemacs: Synchronized DOM for root node")))
                   
                   (when treemacs-text-scale
                     (text-scale-increase treemacs-text-scale))
