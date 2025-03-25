@@ -46,8 +46,14 @@
 (defun lsp-treemacs-generic-refresh (&optional _cache)
   (condition-case err
       (let ((inhibit-read-only t))
+        ;; Verify we have valid tree data
+        (when lsp-treemacs-tree
+          (message "LSP-Treemacs: Refreshing with %s items in tree" (length lsp-treemacs-tree)))
+        
         ;; First clear any variables that might reference the DOM
-        (setq-local lsp-treemacs-tree (copy-tree lsp-treemacs-tree t))
+        ;; Only copy if tree exists and is valid
+        (when (and lsp-treemacs-tree (listp lsp-treemacs-tree))
+          (setq-local lsp-treemacs-tree (copy-tree lsp-treemacs-tree t)))
         
         ;; Reset the DOM completely to avoid corruption
         (setq-local treemacs-dom (make-hash-table :test #'equal))
@@ -149,9 +155,15 @@
 ;; or an empty list as fallback to avoid errors
 (treemacs-define-variadic-entry-node-type lsp-treemacs-generic-root
   :key 'lsp-treemacs-generic-root
-  :children (or (when (and (boundp 'lsp-treemacs-tree) lsp-treemacs-tree) 
-                   (copy-sequence lsp-treemacs-tree)) 
-                 '())
+  :children (progn
+              (when (and (boundp 'lsp-treemacs-tree) lsp-treemacs-tree)
+                (message "LSP-Treemacs: Root children accessible: %s items" 
+                         (length lsp-treemacs-tree)))
+              (or (when (and (boundp 'lsp-treemacs-tree) 
+                             lsp-treemacs-tree
+                             (listp lsp-treemacs-tree)) 
+                    (copy-sequence lsp-treemacs-tree)) 
+                  '()))
   :child-type 'lsp-treemacs-generic-node)
 
 (defun lsp-treemacs-render (tree title expand-depth
