@@ -1036,30 +1036,50 @@ With prefix 2 show both."
 
 (defun lsp-treemacs-errors-list--refresh ()
   "Refresh the errors list."
-  ;; Reset the DOM for a clean slate
-  (when-let ((buffer (get-buffer lsp-treemacs-errors-buffer-name)))
-    (with-current-buffer buffer
-      ;; First reset local variables that might reference the DOM
-      (setq-local lsp-treemacs-tree nil)
-      ;; Then fully clear the DOM
-      (setq-local treemacs-dom (make-hash-table :test #'equal))
-      ;; Ensure DOM is properly initialized
-      (treemacs--reset-dom)))
-  
-  (lsp-treemacs-render
-   (if (and lsp-treemacs-error-list-current-project-only
-            lsp-treemacs--current-workspaces)
-       (->> lsp-treemacs--current-workspaces
-            (-map #'lsp-workspace-folders)
-            (-flatten)
-            (-keep #'lsp-treemacs--build-error-list))
-     (->> (lsp-session)
-          (lsp-session-folders)
-          (-keep #'lsp-treemacs--build-error-list)))
-   "Errors List"
-   lsp-treemacs-error-list-expand-depth
-   lsp-treemacs-errors-buffer-name
-   `(["Cycle Severity" lsp-treemacs-cycle-severity])))
+  (condition-case err
+      (progn
+        ;; Reset the DOM for a clean slate
+        (when-let ((buffer (get-buffer lsp-treemacs-errors-buffer-name)))
+          (with-current-buffer buffer
+            ;; First reset local variables that might reference the DOM
+            (setq-local lsp-treemacs-tree nil)
+            ;; Then fully clear the DOM
+            (setq-local treemacs-dom (make-hash-table :test #'equal))
+            (treemacs--reset-dom)
+            ;; Clear buffer contents
+            (let ((inhibit-read-only t))
+              (erase-buffer))))
+        
+        ;; Gather the error tree data
+        (let ((tree-data (if (and lsp-treemacs-error-list-current-project-only
+                               lsp-treemacs--current-workspaces)
+                          (->> lsp-treemacs--current-workspaces
+                               (-map #'lsp-workspace-folders)
+                               (-flatten)
+                               (-keep #'lsp-treemacs--build-error-list))
+                        (->> (lsp-session)
+                             (lsp-session-folders)
+                             (-keep #'lsp-treemacs--build-error-list)))))
+          
+          ;; Ensure tree-data is a valid list
+          (unless (listp tree-data)
+            (setq tree-data nil))
+          
+          ;; Render with either data or empty list
+          (lsp-treemacs-render
+           tree-data
+           "Errors List"
+           lsp-treemacs-error-list-expand-depth
+           lsp-treemacs-errors-buffer-name
+           `(["Cycle Severity" lsp-treemacs-cycle-severity]))
+          
+          ;; Set header message if empty
+          (when (and (get-buffer lsp-treemacs-errors-buffer-name)
+                     (not tree-data))
+            (with-current-buffer lsp-treemacs-errors-buffer-name
+              (setq-local header-line-format "No errors")))))
+    (error
+     (message "Error refreshing lsp-treemacs errors list: %s" (error-message-string err)))))
 
 ;;;###autoload
 (defun lsp-treemacs-errors-list ()
@@ -1071,18 +1091,29 @@ With prefix 2 show both."
         ;; If buffer exists, but we're about to re-use it, we need to
         ;; completely recreate the treemacs DOM to avoid state issues
         (with-current-buffer buffer
-          (setq-local treemacs-dom nil)
-          (treemacs--reset-dom))
+          (setq-local lsp-treemacs-tree nil)
+          (setq-local treemacs-dom (make-hash-table :test #'equal))
+          (treemacs--reset-dom)
+          ;; Clear buffer contents
+          (let ((inhibit-read-only t))
+            (erase-buffer)))
         (select-window (display-buffer-in-side-window buffer lsp-treemacs-errors-position-params))
         (lsp-treemacs-errors-list--refresh))
-    (let* ((buffer (lsp-treemacs-errors-list--refresh))
+    (let* ((buffer (get-buffer-create lsp-treemacs-errors-buffer-name))
            (window (display-buffer-in-side-window buffer lsp-treemacs-errors-position-params)))
+      (with-current-buffer buffer
+        ;; Initialize the buffer with proper DOM structures
+        (setq-local treemacs-dom (make-hash-table :test #'equal))
+        (treemacs--reset-dom)
+        (setq-local lsp-treemacs-tree nil)
+        ;; Set mode after DOM initialization
+        (lsp-treemacs-error-list-mode 1)
+        (add-hook 'kill-buffer-hook 'lsp-treemacs--kill-buffer nil t))
       (select-window window)
       (set-window-dedicated-p window t)
-      (lsp-treemacs-error-list-mode 1)
+      (lsp-treemacs-errors-list--refresh)
       
-      (add-hook 'lsp-diagnostics-updated-hook #'lsp-treemacs-errors-list--refresh)
-      (add-hook 'kill-buffer-hook 'lsp-treemacs--kill-buffer nil t))))
+      (add-hook 'lsp-diagnostics-updated-hook #'lsp-treemacs-errors-list--refresh))))
 
 (defun lsp-treemacs--diagnostic-icon (severity)
   "Get the icon for DIAGNOSTIC."

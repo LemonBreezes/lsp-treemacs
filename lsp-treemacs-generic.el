@@ -139,21 +139,38 @@
   :child-type 'lsp-treemacs-generic-node
   :async? t)
 
+;; The children parameter should evaluate to our buffer-local tree
+;; or an empty list as fallback to avoid errors
 (treemacs-define-variadic-entry-node-type lsp-treemacs-generic-root
   :key 'lsp-treemacs-generic-root
-  :children (lambda () 
-              (or lsp-treemacs-tree nil))
+  :children (or (when (and (boundp 'lsp-treemacs-tree) lsp-treemacs-tree) lsp-treemacs-tree) '())
   :child-type 'lsp-treemacs-generic-node)
 
 (defun lsp-treemacs-render (tree title expand-depth
                                  &optional buffer-name right-click-actions _clear-cache?)
+  "Render TREE in a treemacs buffer with TITLE.
+EXPAND-DEPTH controls auto-expansion, BUFFER-NAME sets the buffer name,
+RIGHT-CLICK-ACTIONS provides context menu items."
   (let ((buffer (get-buffer-create (or buffer-name "*LSP Lookup*"))))
     (with-current-buffer buffer
       ;; Clear any previous state
-      (when (local-variable-p 'treemacs-dom buffer)
+      (let ((inhibit-read-only t))
+        ;; First fully reset DOM
         (setq-local treemacs-dom (make-hash-table :test #'equal))
-        (treemacs--reset-dom))
+        (treemacs--reset-dom)
+        
+        ;; Safety check for tree data - ensure it's a proper list
+        (unless (listp tree)
+          (setq tree nil)
+          (message "Warning: Invalid tree data passed to lsp-treemacs-render"))
+        
+        ;; Set tree data before initialize to ensure it's available
+        (setq-local lsp-treemacs-tree tree)
+        
+        ;; Clear buffer completely 
+        (erase-buffer))
       
+      ;; Initialize with clean slate
       (treemacs-initialize lsp-treemacs-generic-root
         :with-expand-depth (or expand-depth 0)
         :and-do (progn
