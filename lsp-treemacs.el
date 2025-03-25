@@ -1117,18 +1117,31 @@ With prefix 2 show both."
             (with-current-buffer buffer
               (when (and tree-data (not (seq-empty-p tree-data)))
                 (message "LSP-Treemacs: Manually synchronizing DOM after render")
-                ;; First ensure root node is in the DOM
-                (treemacs-on-expand 'lsp-treemacs-generic-root (copy-marker (point-min)))
+                ;; Clear existing DOM and reset it
+                (setq-local treemacs-dom (make-hash-table :test #'equal))
+                (treemacs--reset-dom)
                 
-                ;; Force DOM synchronization for all top-level nodes
-                (save-excursion
-                  (goto-char (point-min))
-                  (let ((top-nodes (treemacs-collect-child-nodes (point-min))))
-                    (when top-nodes
-                      (message "LSP-Treemacs: Found %d top-level nodes to expand" (length top-nodes))
-                      (dolist (node top-nodes)
-                        (when-let ((path (treemacs-button-get node :path)))
-                          (treemacs-on-expand path node)))))))))
+                ;; Explicitly add root node to DOM
+                (let ((root-key 'lsp-treemacs-generic-root)
+                      (marker (copy-marker (point-min))))
+                  (let ((dom-node (treemacs-dom-node->create! :key root-key :position marker)))
+                    (ht-set! treemacs-dom root-key dom-node)
+                    (message "LSP-Treemacs: Created root DOM node with key %s" root-key))
+                  
+                  ;; Force DOM synchronization for all top-level nodes
+                  (save-excursion
+                    (goto-char (point-min))
+                    (let ((top-nodes (treemacs-collect-child-nodes (point-min))))
+                      (when top-nodes
+                        (message "LSP-Treemacs: Found %d top-level nodes to expand" (length top-nodes))
+                        (dolist (node top-nodes)
+                          (when-let ((path (treemacs-button-get node :path)))
+                            (message "LSP-Treemacs: Expanding node with path %s" path)
+                            (let ((parent-node (treemacs-find-in-dom root-key)))
+                              (when parent-node
+                                (let ((child-node (treemacs-dom-node->create! :key path :position node :parent parent-node)))
+                                  (treemacs-dom-node->insert-into-dom! child-node)
+                                  (treemacs-dom-node->add-child! parent-node child-node))))))))))))
 
           ;; Set header message if empty
           (when (get-buffer lsp-treemacs-errors-buffer-name)
