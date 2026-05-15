@@ -776,15 +776,59 @@ implementations automatically."
 
 ;; Call hierarchy.
 
-(lsp-defun lsp-treemacs--call-hierarchy-ret-action ((&CallHierarchyItem :uri :selection-range (&Range :start))
-                                                    &optional callsite-start callsite-uri)
-  "Build the ret action for a call hierarchy item.
-Prefer CALLSITE-START and CALLSITE-URI when provided."
-  (let ((target-uri (or callsite-uri uri))
-        (target-start (or callsite-start start)))
-    (lsp-treemacs--open-file-in-mru (lsp--uri-to-path target-uri))
-    (goto-char (lsp--position-to-point target-start))
-    (run-hooks 'xref-after-jump-hook)))
+(lsp-defun lsp-treemacs--call-hierarchy-ret-action ((&CallHierarchyItem :uri :selection-range (&Range :start)))
+  "Build the ret action for a call hierarchy item using URI and START range."
+  (lsp-treemacs--open-file-in-mru (lsp--uri-to-path uri))
+  (goto-char (lsp--position-to-point start))
+  (run-hooks 'xref-after-jump-hook))
+
+(defun lsp-treemacs--call-hierarchy-file-line (filename start end)
+  "Return the call site line for FILENAME between START and END positions."
+  (let ((fn (lambda ()
+              (-let* (((&Position :character start-character) start)
+                      ((&Position :character end-character) end)
+                      (start-point (lsp--position-to-point start))
+                      (line (lsp-treemacs--extract-line start-point))
+                      (len (length line)))
+                (add-face-text-property (max (min start-character len) 0)
+                                        (max (min end-character len) 0)
+                                        'highlight t line)
+                line))))
+    (if-let ((buf (find-buffer-visiting filename)))
+        (with-current-buffer buf
+          (funcall fn))
+      (when (file-readable-p filename)
+        (with-temp-buffer
+          (insert-file-contents-literally filename)
+          (funcall fn))))))
+
+(lsp-defun lsp-treemacs--call-hierarchy-call-site-item
+  (uri
+   (&Range :start (start &as &Position :line start-line :character start-character)
+           :end (end &as &Position :character end-character)))
+  "Build a call site leaf item for URI and RANGE."
+  (let* ((filename (lsp--uri-to-path uri))
+         (line (or (lsp-treemacs--call-hierarchy-file-line filename start end)
+                   ""))
+         (label (s-trim (format "%s %s"
+                                line
+                                (propertize (format "%s line" (1+ start-line))
+                                            'face 'lsp-details-face)))))
+    (list :label label
+          :key (list uri start-line start-character end-character)
+          :icon-literal ""
+          :ret-action (lambda (&rest _)
+                        (interactive)
+                        (lsp-treemacs--open-file-in-mru filename)
+                        (goto-char (lsp--position-to-point start))
+                        (run-hooks 'xref-after-jump-hook)))))
+
+(defun lsp-treemacs--call-hierarchy-call-site-items (node)
+  "Build call site leaf items for call hierarchy NODE."
+  (-let (((&plist :call-site-uri :call-site-ranges) node))
+    (seq-map (-partial #'lsp-treemacs--call-hierarchy-call-site-item
+                       call-site-uri)
+             call-site-ranges)))
 
 (defun lsp-treemacs--call-hierarchy-children (buffer method outgoing node callback)
   (-let [item (plist-get node :item)]
@@ -795,35 +839,30 @@ Prefer CALLSITE-START and CALLSITE-URI when provided."
        (lambda (result)
          (funcall
           callback
-          (seq-map
-           (-lambda (node)
-             (-let* (((child-item &as &CallHierarchyItem :_name :kind :_detail? :_uri :selection-range (&Range :_start))
-                      (if outgoing
-                          (lsp:call-hierarchy-outgoing-call-to node)
-                        (lsp:call-hierarchy-incoming-call-from node)))
-                     (ranges (if outgoing
-                                 (lsp:call-hierarchy-outgoing-call-from-ranges node)
-                               (lsp:call-hierarchy-incoming-call-from-ranges node)))
-                     (callsite-range (seq-first ranges))
-                     (callsite-start (when callsite-range
-                                       (lsp:range-start callsite-range)))
-                     (callsite-uri (when callsite-start
-                                     (if outgoing
-                                         (lsp:call-hierarchy-item-uri item)
-                                       (lsp:call-hierarchy-item-uri child-item))))
-                     (label (lsp-render-symbol child-item t)))
-               (list :label label
-                     :key label
-                     :icon (lsp-treemacs-symbol-kind->icon kind)
-                     :children-async (-partial #'lsp-treemacs--call-hierarchy-children buffer method outgoing)
-                     :ret-action (lambda (&rest _)
-                                   (interactive)
-                                   (lsp-treemacs--call-hierarchy-ret-action
-                                    child-item
-                                    callsite-start
-                                    callsite-uri))
-                     :item child-item)))
-           result)))
+          (append
+           (lsp-treemacs--call-hierarchy-call-site-items node)
+           (seq-map
+            (-lambda (call)
+              (-let* (((child-item &as &CallHierarchyItem :_name :kind :_detail? :_uri :selection-range (&Range :_start))
+                       (if outgoing
+                           (lsp:call-hierarchy-outgoing-call-to call)
+                         (lsp:call-hierarchy-incoming-call-from call)))
+                      (call-site-ranges (lsp-get call :fromRanges))
+                      (call-site-uri (if outgoing
+                                         (lsp-get item :uri)
+                                       (lsp-get child-item :uri)))
+                      (label (lsp-render-symbol child-item t)))
+                (list :label label
+                      :key label
+                      :icon (lsp-treemacs-symbol-kind->icon kind)
+                      :children-async (-partial #'lsp-treemacs--call-hierarchy-children buffer method outgoing)
+                      :ret-action (lambda (&rest _)
+                                    (interactive)
+                                    (lsp-treemacs--call-hierarchy-ret-action child-item))
+                      :call-site-ranges call-site-ranges
+                      :call-site-uri call-site-uri
+                      :item child-item)))
+            result))))
        :mode 'detached))))
 
 ;;;###autoload
@@ -980,25 +1019,25 @@ With prefix 2 show both."
         (lambda (file)
           (if (and (lsp-f-ancestor-of? folder file)
                    (lsp-treemacs-errors--diags? (lsp-diagnostics-stats-for file)))
-            (list (list :id file
-                        :label (format "%s %s %s"
-                                       (f-filename file)
-                                       (->> (append (lsp-diagnostics-stats-for file) ())
-                                            (-map-indexed
-                                             (lambda (index count)
-                                               (unless (zerop count)
-                                                 (propertize
-                                                  (number-to-string count)
-                                                  'face (alist-get index lsp-treemacs-file-face-map)))))
-                                            (-filter #'identity)
-                                            (s-join "/"))
-                                       (propertize (f-dirname (f-relative file folder))
-                                                   'face 'lsp-details-face))
-                        :icon (if (f-directory? file) 'dir-closed (f-ext file))
-                        :children (-partial #'lsp-treemacs--error-list-diags folder file)
-                        :ret-action (lambda (&rest _)
-                                      (interactive)
-                                      (lsp-treemacs--open-file-in-mru file))))
+              (list (list :id file
+                          :label (format "%s %s %s"
+                                         (f-filename file)
+                                         (->> (append (lsp-diagnostics-stats-for file) ())
+                                              (-map-indexed
+                                               (lambda (index count)
+                                                 (unless (zerop count)
+                                                   (propertize
+                                                    (number-to-string count)
+                                                    'face (alist-get index lsp-treemacs-file-face-map)))))
+                                              (-filter #'identity)
+                                              (s-join "/"))
+                                         (propertize (f-dirname (f-relative file folder))
+                                                     'face 'lsp-details-face))
+                          :icon (if (f-directory? file) 'dir-closed (f-ext file))
+                          :children (-partial #'lsp-treemacs--error-list-diags folder file)
+                          :ret-action (lambda (&rest _)
+                                        (interactive)
+                                        (lsp-treemacs--open-file-in-mru file))))
             (if (lsp-f-same? folder file)
                 (lsp-treemacs--error-list-diags folder file)))))
        ;; for each file we have a list with a single plist that expands,
